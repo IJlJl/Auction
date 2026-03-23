@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
 import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { UpdateAuctionDto } from './dto/update-auction.dto';
@@ -8,27 +8,30 @@ export class AuctionsController {
   constructor(private readonly auctionsService: AuctionsService) {}
 
   @Post()
-  create(@Body() createAuctionDto: CreateAuctionDto) {
-    return this.auctionsService.create(createAuctionDto);
+  async create(@Body() createAuctionDto: CreateAuctionDto) {
+    return await this.auctionsService.create(createAuctionDto);
   }
 
   @Get()
-  findAll() {
-    return this.auctionsService.findAll();
+  async findAll() {
+    return await this.auctionsService.findAll();
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.auctionsService.findOne(+id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.auctionsService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateAuctionDto: UpdateAuctionDto) {
-    return this.auctionsService.update(+id, updateAuctionDto);
+  async update(
+    @Param('id', ParseUUIDPipe) id: string, 
+    @Body() updateAuctionDto: UpdateAuctionDto
+  ) {
+    return await this.auctionsService.update(id, updateAuctionDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.auctionsService.remove(+id);
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.auctionsService.remove(id);
   }
 }
