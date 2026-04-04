@@ -1,0 +1,45 @@
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Bid } from './entities/bid.entity';
+import { Auction, AuctionStatus } from '../auctions/entities/auction.entity'; 
+import { AuctionsGateway } from '../auctions/auctions.gateway'; 
+
+@Injectable()
+export class BidsService {
+  constructor(
+    @InjectRepository(Bid)
+    private readonly bidRepository: Repository<Bid>, 
+
+    @InjectRepository(Auction)
+    private readonly auctionRepository: Repository<Auction>, 
+
+    private readonly auctionsGateway: AuctionsGateway,
+  ) {}
+
+  async create(auctionId: string, amount: number) {
+    const auction = await this.auctionRepository.findOneBy({ id: auctionId });
+    if (!auction) throw new BadRequestException('Аукціон не знайдено');
+
+    
+    if (auction.status === AuctionStatus.FINISHED) {
+      throw new BadRequestException('Аукціон уже завершено, ставки більше не приймаються');
+    }
+    // ================================
+
+    const currentPrice = Number(auction.currentPrice) || Number(auction.startPrice);
+    if (amount <= currentPrice) {
+      throw new BadRequestException('Ставка має бути вищою за поточну ціну');
+    }
+
+    const bid = this.bidRepository.create({ amount, auctionId });
+    await this.bidRepository.save(bid);
+
+    auction.currentPrice = amount;
+    await this.auctionRepository.save(auction);
+
+    this.auctionsGateway.notifyPriceUpdate(auctionId, amount);
+
+    return bid;
+  }
+}

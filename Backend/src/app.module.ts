@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { AuctionsModule } from './auctions/auctions.module';
 import { Auction } from './auctions/entities/auction.entity';
+import { BidsModule } from './bids/bids.module';
 
 @Module({
   imports: [
@@ -20,6 +21,8 @@ import { Auction } from './auctions/entities/auction.entity';
 }),
 
     AuctionsModule,
+
+    BidsModule,
   ],
 })
 export class AppModule {}
