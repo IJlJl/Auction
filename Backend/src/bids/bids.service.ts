@@ -22,12 +22,7 @@ export class BidsService {
   const auction = await this.auctionRepository.findOneBy({ id: auctionId });
   if (!auction) throw new BadRequestException('Аукціон не знайдено');
 
-  console.log(`[BID ATTEMPT] Аукціон ID: ${auctionId}`);
-  console.log(`[BID ATTEMPT] Поточний статус у базі: "${auction.status}"`);
-  console.log(`[BID ATTEMPT] Тип статусу: ${typeof auction.status}`);
 
-
-  
  if (String(auction.status) === 'finished' || auction.status === AuctionStatus.FINISHED) {
   console.log('!!! СТАВКА ВІДХИЛЕНА: СТАТУС FINISHED !!!');
   throw new BadRequestException('Ставки не приймаються: аукціон уже завершено!');
