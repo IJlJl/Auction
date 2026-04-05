@@ -1,4 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { User } from '../../users/entities/user.entity';
+import { Bid } from '../../bids/entities/bid.entity';
 
 export enum AuctionStatus {
   ACTIVE = 'active',
@@ -9,6 +11,14 @@ export enum AuctionStatus {
 export class Auction {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  @ManyToOne(() => User, (user) => user.auctions)
+  @JoinColumn({ name: 'creatorId' })
+  creator!: User;
+
+  @Column()
+  creatorId!: string; 
+
 
   @Column()
   title!: string;
@@ -37,4 +47,11 @@ export class Auction {
 
   @UpdateDateColumn()
   updatedAt!: Date;
+
+  @Column({ nullable: true })
+imageUrl!: string;
+  
+@OneToMany(() => Bid, (bid) => bid.auction)
+bids!: Bid[];
+
 }

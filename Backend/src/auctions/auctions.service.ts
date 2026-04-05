@@ -7,6 +7,7 @@ import { UpdateAuctionDto } from './dto/update-auction.dto';
 import { ClientProxy } from '@nestjs/microservices';
 import { AuctionsGateway } from './auctions.gateway';
 
+
 @Injectable()
 export class AuctionsService {
   constructor(
@@ -19,42 +20,49 @@ export class AuctionsService {
     private readonly auctionsGateway: AuctionsGateway, 
   ) {}
 
-  async create(createAuctionDto: CreateAuctionDto) { 
-    const auction = this.auctionRepository.create(createAuctionDto);
-    const savedAuction = await this.auctionRepository.save(auction);
+  async create(createAuctionDto: CreateAuctionDto, userId: string, imageUrl?: string) { 
+  const auction = this.auctionRepository.create({
+    ...createAuctionDto,
+    creatorId: userId,
+    imageUrl: imageUrl,
+  });
 
-    
-    const delay = new Date(savedAuction.endsAt).getTime() - new Date().getTime();
+  const savedAuction = await this.auctionRepository.save(auction);
 
- 
-    this.client.emit('auction_created', { 
-      auctionId: savedAuction.id, 
-      delay: delay > 0 ? delay : 0 
-    });
+  const delay = new Date(savedAuction.endsAt).getTime() - new Date().getTime();
+  this.client.emit('auction_created', { 
+    auctionId: savedAuction.id, 
+    delay: delay > 0 ? delay : 0 
+  });
 
-    return savedAuction;
-  }
+  return savedAuction;
+}
 
  
   async closeAuction(id: string) {
   const auction = await this.findOne(id);
-
-  auction.status = AuctionStatus.FINISHED; 
+  
+  if (auction.status === AuctionStatus.FINISHED) return; 
+  
+  auction.status = AuctionStatus.FINISHED;
   await this.auctionRepository.save(auction);
 
+ 
+  this.auctionsGateway.server.emit('auctionFinished', { auctionId: id });
   
-  this.auctionsGateway.server.emit('auctionFinished', { 
-    auctionId: id, 
-    title: auction.title 
+  console.log(` Аукціон ${id} збережено в базі як FINISHED`);
+}
+
+ async findAll() {
+  return await this.auctionRepository.find({
+    
+    relations: ['bids', 'bids.bidder'], 
+    
+    order: {
+      createdAt: 'DESC', 
+    }
   });
-
-
-    console.log(`Аукціон ${id} офіційно закрито!`);
-  }
-
-  async findAll() {
-    return await this.auctionRepository.find();
-  }
+}
 
   async findOne(id: string) { 
     const auction = await this.auctionRepository.findOneBy({ id });

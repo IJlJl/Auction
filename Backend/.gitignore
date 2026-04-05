@@ -3,6 +3,9 @@
 /node_modules
 /build
 
+/Backend/uploads/*
+!/Backend/uploads/.gitkeep
+
 # Logs
 logs
 *.log

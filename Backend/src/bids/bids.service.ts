@@ -17,29 +17,37 @@ export class BidsService {
     private readonly auctionsGateway: AuctionsGateway,
   ) {}
 
-  async create(auctionId: string, amount: number) {
-    const auction = await this.auctionRepository.findOneBy({ id: auctionId });
-    if (!auction) throw new BadRequestException('Аукціон не знайдено');
+ async create(auctionId: string, amount: number, userId: string) {
+  
+  const auction = await this.auctionRepository.findOneBy({ id: auctionId });
+  if (!auction) throw new BadRequestException('Аукціон не знайдено');
 
-    
-    if (auction.status === AuctionStatus.FINISHED) {
-      throw new BadRequestException('Аукціон уже завершено, ставки більше не приймаються');
-    }
-    // ================================
+  console.log(`[BID ATTEMPT] Аукціон ID: ${auctionId}`);
+  console.log(`[BID ATTEMPT] Поточний статус у базі: "${auction.status}"`);
+  console.log(`[BID ATTEMPT] Тип статусу: ${typeof auction.status}`);
 
-    const currentPrice = Number(auction.currentPrice) || Number(auction.startPrice);
-    if (amount <= currentPrice) {
-      throw new BadRequestException('Ставка має бути вищою за поточну ціну');
-    }
 
-    const bid = this.bidRepository.create({ amount, auctionId });
-    await this.bidRepository.save(bid);
+  
+ if (String(auction.status) === 'finished' || auction.status === AuctionStatus.FINISHED) {
+  console.log('!!! СТАВКА ВІДХИЛЕНА: СТАТУС FINISHED !!!');
+  throw new BadRequestException('Ставки не приймаються: аукціон уже завершено!');
+}
 
-    auction.currentPrice = amount;
-    await this.auctionRepository.save(auction);
-
-    this.auctionsGateway.notifyPriceUpdate(auctionId, amount);
-
-    return bid;
+  
+  const currentPrice = Number(auction.currentPrice) || Number(auction.startPrice);
+  if (amount <= currentPrice) {
+    throw new BadRequestException('Ставка має бути вищою за поточну ціну');
   }
+
+  
+  const bid = this.bidRepository.create({ amount, auctionId, bidderId: userId });
+  await this.bidRepository.save(bid);
+
+  auction.currentPrice = amount;
+  await this.auctionRepository.save(auction);
+
+  this.auctionsGateway.notifyPriceUpdate(auctionId, amount);
+
+  return bid;
+}
 }
