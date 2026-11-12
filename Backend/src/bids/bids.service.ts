@@ -24,7 +24,6 @@ export class BidsService {
 
 
  if (String(auction.status) === 'finished' || auction.status === AuctionStatus.FINISHED) {
-  console.log('!!! СТАВКА ВІДХИЛЕНА: СТАТУС FINISHED !!!');
   throw new BadRequestException('Ставки не приймаються: аукціон уже завершено!');
 }
 
