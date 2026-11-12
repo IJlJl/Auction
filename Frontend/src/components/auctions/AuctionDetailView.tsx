@@ -5,7 +5,6 @@ import { CountdownTimer } from './CountdownTimer';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../api/client';
 import { socket } from '../../api/sockets';
-import AuctionGavelVictory from './AuctionGavelVictory';
 
 interface AuctionDetailViewProps {
   auction: Auction;
@@ -28,7 +27,6 @@ export const AuctionDetailView: React.FC<AuctionDetailViewProps> = ({
   const { user, isAuthenticated } = useAuth();
   const [customAmount, setCustomAmount] = useState<number | ''>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isVictoryModalOpen, setIsVictoryModalOpen] = useState(false);
 
   const isFinished = auction.status === 'finished';
 
@@ -188,31 +186,6 @@ export const AuctionDetailView: React.FC<AuctionDetailViewProps> = ({
         <div className="lg:col-span-5 space-y-6 flex flex-col">
           <div className="rounded-3xl bg-[#160B12]/80 border border-rose-500/20 p-6 backdrop-blur-xl space-y-4">
             
-            {/* Банер переможця: відкриває сцену з молотком */}
-            {isWinner && (
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-amber-500/20 border border-amber-400/40 text-center shadow-[0_0_30px_rgba(251,191,36,0.2)] space-y-2"
-              >
-                <span className="text-3xl block">🏆</span>
-                <h4 className="text-base font-black text-amber-200 uppercase tracking-wide">
-                  Вітаємо! Ви перемогли в аукціоні!
-                </h4>
-                <p className="text-xs text-rose-200/80">
-                  Ваша ставка <b className="text-white font-mono">${topBid.amount}</b> стала переможною.
-                </p>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setIsVictoryModalOpen(true)}
-                  className="mt-1 px-4 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
-                >
-                  <span>🔨</span> Дивитися церемонію продажу!
-                </motion.button>
-              </motion.div>
-            )}
-
             <span className="text-xs uppercase tracking-wider text-rose-200/60 font-semibold block">
               Поточна найвища ставка
             </span>
@@ -350,14 +323,6 @@ export const AuctionDetailView: React.FC<AuctionDetailViewProps> = ({
         </div>
       </div>
 
-      {/* Модальна кінематографічна сцена удару молотка */}
-      <AuctionGavelVictory
-        isOpen={isVictoryModalOpen}
-        onClose={() => setIsVictoryModalOpen(false)}
-        winnerNickname={topBid?.bidder?.nickname || user?.nickname || 'Переможець'}
-        winningAmount={topBid?.amount || Number(auction.currentPrice)}
-        auctionTitle={auction.title}
-      />
     </motion.div>
   );
 };
