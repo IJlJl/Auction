@@ -10,12 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "baseline-browser-mapping": "^2.11.31",
+    "caniuse-lite": "^1.0.30001819",
+    "canvas-confetti": "^1.9.4",
+    "framer-motion": "^14.6.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

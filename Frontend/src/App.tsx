@@ -1,299 +1,314 @@
-import "./index.css";
-import { useEffect, useState } from 'react'
-import { io } from 'socket.io-client';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { Auction, PriceUpdatedPayload, AuctionFinishedPayload } from './types';
+import { auctionsApi } from './api/auctions.api';
+import { bidsApi } from './api/bids.api';
+import { socket } from './api/sockets';
+import { useAuth } from './context/AuthContext';
 
-const socket = io('http://localhost:3000', {
-  transports: ['websocket', 'polling'],
-  withCredentials: true,
-});
+import { Navbar } from './components/ui/Navbar';
+import { AuctionCard } from './components/auctions/AuctionCard';
+import { AuctionDetailView } from './components/auctions/AuctionDetailView';
+import { CreateAuctionModal } from './components/auctions/CreateAuctionModal';
+import { AuthForm } from './components/auth/AuthForm';
+import { ProfileView } from './components/profile/ProfileView';
 
-interface Bid {
-  id: string;
-  amount: number;
-  bidder?: {
-    nickname: string;
-  };
-}
+type SortOption = 'newest' | 'endingSoon' | 'priceLow' | 'priceHigh' | 'mostBids';
 
-interface Auction {
-  id: string;
-  title: string;
-  description: string;
-  startPrice: string;
-  currentPrice: string;
-  endsAt: string;
-  status?: string; 
-  creatorId: string;
-  imageUrl?: string;
-  bids?: Bid[]; 
-}
+export function App() {
+  const { isAuthenticated } = useAuth();
 
-function CountdownTimer({ targetDate }: { targetDate: string }) {
-  const [timeLeft, setTimeLeft] = useState("");
-
-  useEffect(() => {
-    const calculateTime = () => {
-      const difference = new Date(targetDate).getTime() - new Date().getTime();
-      if (difference <= 0) {
-        setTimeLeft("ЗАВЕРШЕНО");
-        return false;
-      }
-      const hours = Math.floor((difference / (1000 * 60 * 60)) % 24).toString().padStart(2, '0');
-      const minutes = Math.floor((difference / 1000 / 60) % 60).toString().padStart(2, '0');
-      const seconds = Math.floor((difference / 1000) % 60).toString().padStart(2, '0');
-      setTimeLeft(`${hours}:${minutes}:${seconds}`);
-      return true;
-    };
-    calculateTime();
-    const interval = setInterval(calculateTime, 1000);
-    return () => clearInterval(interval);
-  }, [targetDate]);
-
-  return (
-    <div className={`px-3 py-1 rounded-full text-[10px] font-black tracking-wider uppercase border ${
-      timeLeft === "ЗАВЕРШЕНО" ? "bg-red-50 text-red-500 border-red-100" : "bg-orange-50 text-orange-600 border-orange-100"
-    }`}>
-      {timeLeft}
-    </div>
-  );
-}
-
-function App() {
   const [auctions, setAuctions] = useState<Auction[]>([]);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [formData, setFormData] = useState({ title: '', description: '', startPrice: 0, endsAt: '' });
-  const [bidAmounts, setBidAmounts] = useState<Record<string, number>>({});
-  
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [currentUser, setCurrentUser] = useState<any>(JSON.parse(localStorage.getItem('user') || 'null'));
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [nickname, setNickname] = useState('');
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [view, setView] = useState<'home' | 'profile'>('home');
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'active' | 'finished'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [currentView, setCurrentView] = useState<'home' | 'profile'>('home');
+  const [selectedAuctionId, setSelectedAuctionId] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const fetchAuctions = async () => {
+  const fetchAuctions = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:3000/auctions');
-      const data = await response.json();
+      const data = await auctionsApi.getAll();
       setAuctions(data);
-    } catch (error) {
-      console.error("Error loading auctions:", error);
+    } catch (err: any) {
+      console.error('Помилка завантаження лотів:', err);
+    } finally {
+      setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAuctions(); 
-    socket.on("priceUpdated", () => fetchAuctions()); 
-    socket.on("auctionFinished", (data) => {
-      setAuctions(prev => prev.map(auc => auc.id === data.auctionId ? { ...auc, status: 'finished' } : auc));
-    });
-    return () => { socket.off("priceUpdated"); socket.off("auctionFinished"); };
   }, []);
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const res = await fetch('http://localhost:3000/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, nickname }),
-    });
-    if (res.ok) {
-      alert('Успіх! Тепер увійдіть.');
-      setIsRegisterMode(false);
-    } else {
-      const err = await res.json();
-      alert(err.message);
-    }
-  };
+  useEffect(() => {
+    fetchAuctions();
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const res = await fetch('http://localhost:3000/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (data.access_token) {
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      setToken(data.access_token);
-      setCurrentUser(data.user);
-    } else {
-      alert('Помилка входу');
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.clear();
-    setToken(null);
-    setCurrentUser(null);
-    setView('home');
-  };
-
-  const handleCreateAuction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const data = new FormData();
-    data.append('title', formData.title);
-    data.append('description', formData.description);
-    data.append('startPrice', formData.startPrice.toString());
-    data.append('endsAt', formData.endsAt);
-    const fileInput = (e.target as any).elements.image;
-    if (fileInput.files[0]) data.append('image', fileInput.files[0]);
-
-    const res = await fetch('http://localhost:3000/auctions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: data,
-    });
-    if (res.ok) {
-      setIsFormOpen(false);
+    const handlePriceUpdated = (payload: PriceUpdatedPayload) => {
+      setAuctions((prev) =>
+        prev.map((auc) =>
+          auc.id === payload.auctionId
+            ? { ...auc, currentPrice: payload.newPrice }
+            : auc
+        )
+      );
       fetchAuctions();
-    }
+    };
+
+    const handleAuctionFinished = (payload: AuctionFinishedPayload) => {
+      setAuctions((prev) =>
+        prev.map((auc) =>
+          auc.id === payload.auctionId ? { ...auc, status: 'finished' } : auc
+        )
+      );
+    };
+
+    socket.on('priceUpdated', handlePriceUpdated);
+    socket.on('auctionFinished', handleAuctionFinished);
+
+    return () => {
+      socket.off('priceUpdated', handlePriceUpdated);
+      socket.off('auctionFinished', handleAuctionFinished);
+    };
+  }, [fetchAuctions]);
+
+  const handlePlaceBid = async (auctionId: string, amount: number) => {
+    await bidsApi.placeBid({ auctionId, amount });
   };
 
-  const handlePlaceBid = async (auctionId: string, customAmount?: number) => {
-    if (!token) return alert("Будь ласка, увійдіть!");
-    const auction = auctions.find(a => a.id === auctionId);
-    if (!auction) return;
-    const current = parseFloat(auction.currentPrice) > 0 ? parseFloat(auction.currentPrice) : parseFloat(auction.startPrice);
-    const amountToSend = customAmount || (current + 10);
-
-    const res = await fetch('http://localhost:3000/bids', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ auctionId, amount: amountToSend }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.message);
-    } else {
-      setBidAmounts(prev => ({ ...prev, [auctionId]: 0 }));
-    }
+  const handleCreateAuction = async (formData: FormData) => {
+    await auctionsApi.create(formData);
+    await fetchAuctions();
   };
+
+  const processedAuctions = useMemo(() => {
+    return auctions
+      .filter((auc) => {
+        if (filter === 'active') return auc.status !== 'finished';
+        if (filter === 'finished') return auc.status === 'finished';
+        return true;
+      })
+      .filter((auc) => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        const titleMatch = auc.title.toLowerCase().includes(q);
+        const descMatch = (auc.description || '').toLowerCase().includes(q);
+        return titleMatch || descMatch;
+      })
+      .sort((a, b) => {
+        const priceA = Number(a.currentPrice) > 0 ? Number(a.currentPrice) : Number(a.startPrice);
+        const priceB = Number(b.currentPrice) > 0 ? Number(b.currentPrice) : Number(b.startPrice);
+
+        switch (sortBy) {
+          case 'priceLow':
+            return priceA - priceB;
+          case 'priceHigh':
+            return priceB - priceA;
+          case 'endingSoon':
+            return new Date(a.endsAt).getTime() - new Date(b.endsAt).getTime();
+          case 'mostBids':
+            return (b.bids?.length || 0) - (a.bids?.length || 0);
+          case 'newest':
+          default:
+            return 0;
+        }
+      });
+  }, [auctions, filter, searchQuery, sortBy]);
+
+  const activeCount = auctions.filter((a) => a.status !== 'finished').length;
+  const selectedAuction = auctions.find((a) => a.id === selectedAuctionId);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#0D060A] text-slate-100 font-sans selection:bg-rose-500 selection:text-white">
+        <AuthForm />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-8 text-slate-900 font-sans">
-      <header className="max-w-7xl mx-auto flex justify-between items-center mb-12 bg-white/80 backdrop-blur-md p-4 px-8 rounded-[2rem] shadow-sm border border-white sticky top-4 z-50">
-        <h1 onClick={() => setView('home')} className="text-2xl font-black cursor-pointer tracking-tighter uppercase">
-          Auction<span className="text-blue-600">.</span>
-        </h1>
-        <div className="flex items-center gap-4">
-          {token ? (
-            <>
-              <button onClick={() => setView('profile')} className="flex items-center gap-2 font-bold text-slate-700 hover:text-blue-600 transition-all bg-slate-50 p-2 px-4 rounded-xl italic">
-                👤 {currentUser?.nickname}
-              </button>
-              <button onClick={handleLogout} className="text-sm font-bold text-red-400">Вийти</button>
-              <button onClick={() => {setView('home'); setIsFormOpen(true)}} className="bg-slate-900 text-white font-bold py-2 px-5 rounded-xl shadow-lg hover:bg-black transition-all">＋ Лот</button>
-            </>
-          ) : (
-            <span className="text-sm font-bold text-blue-600 uppercase tracking-widest italic">Live Platform</span>
-          )}
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0D060A] text-slate-100 font-sans selection:bg-rose-500 selection:text-white">
+      <Navbar
+        activeCount={activeCount}
+        currentView={currentView}
+        onNavigate={(view) => {
+          setSelectedAuctionId(null);
+          setCurrentView(view);
+        }}
+        onOpenCreateModal={() => {
+          setSelectedAuctionId(null);
+          setCurrentView('home');
+          setIsCreateModalOpen(true);
+        }}
+      />
 
-      <main className="max-w-7xl mx-auto">
-        {!token ? (
-          <div className="max-w-md mx-auto mt-20 bg-white p-10 rounded-[2.5rem] shadow-2xl shadow-blue-100 border border-slate-50">
-            <h2 className="text-3xl font-black mb-2 text-center text-slate-800 italic">{isRegisterMode ? "Створити акаунт" : "З поверненням!"}</h2>
-            <form onSubmit={isRegisterMode ? handleRegister : handleLogin} className="space-y-4">
-              {isRegisterMode && <input type="text" placeholder="Ваш нікнейм" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" onChange={e => setNickname(e.target.value)} />}
-              <input type="email" placeholder="Email" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" onChange={e => setEmail(e.target.value)} />
-              <input type="password" placeholder="Пароль" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" onChange={e => setPassword(e.target.value)} />
-              <button type="submit" className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700 transition-all">{isRegisterMode ? "Зареєструватися" : "Увійти"}</button>
-            </form>
-            <button onClick={() => setIsRegisterMode(!isRegisterMode)} className="w-full mt-6 text-sm text-slate-400">{isRegisterMode ? "Вже є акаунт? Увійти" : "Ще немає акаунту? Створити"}</button>
-          </div>
-        ) : (
-          view === 'profile' ? (
-            <div className="max-w-4xl mx-auto bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100">
-              <h2 className="text-4xl font-black mb-2 text-slate-800 italic">Особистий кабінет</h2>
-              <p className="text-blue-600 font-bold text-lg mb-8">@{currentUser?.nickname}</p>
-              <h3 className="text-xl font-black mb-6 uppercase tracking-widest text-slate-300">Ваші лоти</h3>
-              <div className="space-y-3">
-                {auctions.filter(a => a.creatorId === currentUser?.id).map(auction => (
-                   <div key={auction.id} className="p-5 border border-slate-100 rounded-2xl bg-white flex justify-between items-center shadow-sm">
-                     <p className="font-bold text-slate-800">{auction.title}</p>
-                     <b className="text-blue-600 text-xl">${auction.currentPrice || auction.startPrice}</b>
-                   </div>
-                ))}
-              </div>
-            </div>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <AnimatePresence mode="wait">
+          {selectedAuction ? (
+            <AuctionDetailView
+              key={`detail-${selectedAuction.id}`}
+              auction={selectedAuction}
+              onBack={() => setSelectedAuctionId(null)}
+              onPlaceBid={handlePlaceBid}
+            />
+          ) : currentView === 'profile' ? (
+            <motion.div
+              key="profile"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+            >
+              <ProfileView auctions={auctions} />
+            </motion.div>
           ) : (
-            <>
-              {isFormOpen && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                  <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl max-w-lg w-full relative">
-                    <button onClick={() => setIsFormOpen(false)} className="absolute top-6 right-6 text-slate-400 text-2xl">×</button>
-                    <h2 className="text-2xl font-black mb-6 italic">Новий аукціон</h2>
-                    <form onSubmit={handleCreateAuction} className="space-y-4">
-                      <input type="text" placeholder="Назва" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none" onChange={e => setFormData({...formData, title: e.target.value})}/>
-                      <textarea placeholder="Опис" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none h-32" onChange={e => setFormData({...formData, description: e.target.value})}/>
-                      <div className="grid grid-cols-2 gap-4">
-                        <input type="number" placeholder="Ціна ($)" required className="p-4 bg-slate-50 rounded-2xl outline-none" onChange={e => setFormData({...formData, startPrice: Number(e.target.value)})}/>
-                        <input type="datetime-local" required className="p-4 bg-slate-50 rounded-2xl outline-none" onChange={e => setFormData({...formData, endsAt: new Date(e.target.value).toISOString()})}/>
-                      </div>
-                      <input type="file" name="image" accept="image/*" className="w-full p-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700" />
-                      <button type="submit" className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700">Опублікувати</button>
-                    </form>
-                  </div>
+            <motion.div
+              key="home"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h1 className="text-2xl font-black text-white tracking-tight">
+                    Аукціонні торги
+                  </h1>
+                  <p className="text-xs text-rose-200/60 mt-1">
+                    Знайдено {processedAuctions.length} з {auctions.length} лотів
+                  </p>
                 </div>
-              )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                {auctions.map((auction) => (
-                  <div key={auction.id} className="group bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
-                    <div className="h-56 bg-slate-100 relative overflow-hidden">
-                      {auction.imageUrl ? (
-                        <img src={`http://localhost:3000${auction.imageUrl}`} alt="" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-slate-300 italic text-sm font-black uppercase tracking-widest">No Image</div>
+                <div className="inline-flex p-1 rounded-2xl bg-white/[0.04] border border-rose-500/10">
+                  {(['all', 'active', 'finished'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setFilter(tab)}
+                      className="relative px-4 py-1.5 rounded-xl text-xs font-bold transition-colors capitalize text-slate-400 hover:text-rose-200"
+                    >
+                      {filter === tab && (
+                        <motion.div
+                          layoutId="activeFilterTab"
+                          transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                          className="absolute inset-0 bg-gradient-to-r from-rose-600 to-pink-600 rounded-xl shadow-[0_0_15px_rgba(244,63,94,0.4)]"
+                        />
                       )}
-                      <div className="absolute top-4 left-4"><CountdownTimer targetDate={auction.endsAt} /></div>
-                    </div>
-                    
-                    <div className="p-8 flex-1 flex flex-col">
-                      <h2 className="text-2xl font-black mb-2 text-slate-800 italic uppercase">{auction.title}</h2>
-                      <p className="text-slate-400 text-sm mb-6 line-clamp-2">{auction.description}</p>
-                      
-                      <div className="bg-slate-50 p-6 rounded-[2rem] mb-6">
-                        <span className="text-[10px] uppercase font-black text-slate-300 tracking-widest">Current Bid</span>
-                        <p className="text-4xl font-black text-slate-900 mt-1"><span className="text-blue-600 font-medium text-2xl mr-1">$</span>{parseFloat(auction.currentPrice) > 0 ? auction.currentPrice : auction.startPrice}</p>
-                      </div>
-
-                      <div className="mb-6 space-y-2 border-t border-slate-50 pt-4">
-                        <p className="text-[10px] uppercase font-black text-slate-300 tracking-widest mb-3">Bid History</p>
-                        {auction.bids && auction.bids.length > 0 ? auction.bids.slice(0, 3).map(bid => (
-                          <div key={bid.id} className="flex justify-between items-center text-xs font-bold">
-                            <span className="text-slate-400 italic">@{bid.bidder?.nickname || 'Anonymous'}</span>
-                            <span className="text-blue-500">${bid.amount}</span>
-                          </div>
-                        )) : <p className="text-[10px] text-slate-300 italic">No bids yet</p>}
-                      </div>
-
-                      {auction.status === 'finished' ? (
-                        <div className="bg-slate-100 text-slate-400 font-black py-4 rounded-2xl text-center border border-dashed border-slate-200 tracking-widest text-xs uppercase italic">Auction Closed 🏁</div>
-                      ) : (
-                        <div className="space-y-4">
-                          <div className="flex gap-2 p-1 bg-slate-50 rounded-2xl border border-slate-100">
-                            <input type="number" placeholder="Your price" value={bidAmounts[auction.id] || ''} onChange={(e) => setBidAmounts({...bidAmounts, [auction.id]: Number(e.target.value)})} className="flex-1 bg-transparent p-3 outline-none font-bold text-slate-700" />
-                            <button onClick={() => handlePlaceBid(auction.id, bidAmounts[auction.id])} className="bg-white text-blue-600 shadow-sm px-6 rounded-xl font-black hover:bg-blue-600 hover:text-white transition-all">OK</button>
-                          </div>
-                          <button onClick={() => handlePlaceBid(auction.id)} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95 italic">Quick Bid (+$10)</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                      <span className={`relative z-10 ${filter === tab ? 'text-white' : ''}`}>
+                        {tab === 'all'
+                          ? 'Всі'
+                          : tab === 'active'
+                          ? 'Активні'
+                          : 'Завершені'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </>
-          )
-        )}
+
+             
+              <div className="flex flex-col md:flex-row items-center gap-3 mb-8">
+               
+                <div className="relative flex-1 w-full">
+                  
+                  <svg
+                    className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-300/70 pointer-events-none z-10"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Пошук лоту за назвою чи описом..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-[#160B12]/80 border border-rose-500/20 rounded-2xl pl-11 pr-10 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500/50 backdrop-blur-md transition-all shadow-inner"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/10 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 flex items-center justify-center text-xs transition-colors z-10 cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Селектор сортування */}
+                <div className="relative w-full md:w-auto">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    className="w-full md:w-auto bg-[#160B12]/80 border border-rose-500/20 rounded-2xl px-4 py-3 text-sm text-rose-200/90 focus:outline-none focus:border-rose-500/50 backdrop-blur-md cursor-pointer transition-all [color-scheme:dark]"
+                  >
+                    <option value="newest">🕒 Найновіші</option>
+                    <option value="endingSoon">🔥 Закінчуються найшвидше</option>
+                    <option value="priceLow">📉 Ціна: від найнижчої</option>
+                    <option value="priceHigh">📈 Ціна: від найвищої</option>
+                    <option value="mostBids">⚡ Найпопулярніші</option>
+                  </select>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[1, 2, 3].map((n) => (
+                    <div
+                      key={n}
+                      className="h-96 rounded-3xl bg-[#160B12]/50 border border-rose-500/10 animate-pulse"
+                    />
+                  ))}
+                </div>
+              ) : processedAuctions.length === 0 ? (
+                <div className="text-center py-24 rounded-3xl bg-[#160B12]/40 border border-rose-500/10">
+                  <span className="text-4xl block mb-3">🔍</span>
+                  <h3 className="text-base font-bold text-white mb-1">
+                    Нічого не знайдено
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">
+                    За вашим запитом лотів не знайдено. Спробуйте змінити пошук або фільтри.
+                  </p>
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="px-4 py-2 bg-white/5 hover:bg-white/10 text-rose-300 text-xs font-semibold rounded-xl border border-rose-500/20 transition-all"
+                    >
+                      Очистити пошук
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <motion.div
+                  layout
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                >
+                  <AnimatePresence>
+                    {processedAuctions.map((auction) => (
+                      <AuctionCard
+                        key={auction.id}
+                        auction={auction}
+                        onPlaceBid={handlePlaceBid}
+                        onSelect={() => setSelectedAuctionId(auction.id)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
+
+      <CreateAuctionModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSubmit={handleCreateAuction}
+      />
     </div>
-  )
+  );
 }
 
 export default App;
