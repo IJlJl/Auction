@@ -1,6 +1,7 @@
 import { Controller, Post, Body, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { RegisterDto, LoginDto } from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -9,13 +10,13 @@ export class AuthController {
     private usersService: UsersService,
   ) {}
 
-  
- @Post('register')
-async register(@Body() body: any) {
-  return this.usersService.create(body.email, body.password, body.nickname);
-}
+  @Post('register')
+  async register(@Body() body: RegisterDto) {
+    return this.usersService.create(body.email, body.password, body.nickname);
+  }
+
   @Post('login')
-  async login(@Body() body: any) {
+  async login(@Body() body: LoginDto) {
     const user = await this.authService.validateUser(body.email, body.password);
     if (!user) {
       throw new UnauthorizedException('Неправильний email або пароль');
